@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.malaya.istock.model.Candlestick;
 import com.malaya.istock.model.ScripPrice;
 import com.malaya.istock.model.StockPerf;
 
@@ -49,7 +51,7 @@ public class HelperService {
 		return epoch;
 	}
 
-	public static List<ScripPrice> getStockHistory(String symbol, Long startEpoch, Long endEpoch) {
+	public static List<ScripPrice> getStockHistory(String symbol, Long startEpoch, Long endEpoch) throws Exception {
 
 		HttpClient client = HttpClientBuilder.create().build();
 
@@ -97,7 +99,7 @@ public class HelperService {
 			JSONArray openData = obj.getJSONArray("o");
 			JSONArray volData = obj.getJSONArray("v");
 
-			for (int i = 0; i < timeData.length(); i++) {
+			for (int i = timeData.length() - 1; i >= 0; i--) {
 				entity = new ScripPrice();
 				entity.setTime(timeData.getLong(i));
 				entity.setDate(HelperService.getDateFromEpoch(timeData.getLong(i)));
@@ -106,13 +108,12 @@ public class HelperService {
 				entity.setClose(closeData.getDouble(i));
 				entity.setOpen(openData.getDouble(i));
 				entity.setVolume(volData.getLong(i));
-				// System.out.println(entity);
 				list.add(entity);
 			}
 		} catch (JSONException ex) {
 			ex.printStackTrace();
 		}
-
+		list.sort(Comparator.comparing(ScripPrice::getTime));
 		return list;
 	}
 
@@ -122,7 +123,7 @@ public class HelperService {
 		ZoneId zoneId = ZoneId.systemDefault();
 		Long epoch = date.atStartOfDay(zoneId).toEpochSecond();
 
-		//System.out.println(date);
+		// System.out.println(date);
 		// System.out.println(epoch);
 
 		return epoch;
@@ -188,116 +189,182 @@ public class HelperService {
 
 		return list;
 	}
-	
-	public static StockPerf calculatePerformance(String symbol, String name, int smaDays, int daysForAnalysis, int numOfCandlePos) throws Exception{
-		
+
+	public static StockPerf calculatePerformance(String symbol, String name, int smaDays, int daysForAnalysis,
+			int numOfCandlePos) throws Exception {
+
 		Long startEpoch = HelperService.getSpecificDate(100);
 		Long endEpoch = HelperService.getSpecificDate(0);
-		
-		//System.out.println(Math.atan(1)*180/Math.PI);  
-		
-		//System.exit(0);
+
+		// System.out.println(Math.atan(1)*180/Math.PI);
+
+		// System.exit(0);
 		StockPerf sp = new StockPerf();
 		sp.setName(name);
 		sp.setSymbol(symbol);
-		
+
 		List<ScripPrice> list = HelperService.getStockHistory(symbol, startEpoch, endEpoch);
-		//System.out.println(list);
+		// System.out.println(list);
 		Double prevSMA = 0.0;
 		Double sumSMADiff = 0.0;
-		
-		if(list.size()>0) {
+
+		if (list.size() > 0) {
 			Double sum = 0.0;
-			LinkedHashMap<LocalDate,String> candlePositions = new LinkedHashMap<>();
-			for(int j=0;j<daysForAnalysis;j++) {
-				int start = list.size()-1-j;
-				int end = list.size()-1-j-smaDays;
-				//System.out.println("=================================================================");
-				//System.out.println(list.get(start));
-				//System.out.println(list.get(end));
+			LinkedHashMap<LocalDate, String> candlePositions = new LinkedHashMap<>();
+			for (int j = 0; j < daysForAnalysis; j++) {
+				int start = list.size() - 1 - j;
+				int end = list.size() - 1 - j - smaDays;
+				// System.out.println("=================================================================");
+				// System.out.println(list.get(start));
+				// System.out.println(list.get(end));
 				sum = 0.0;
 				String candleType = "";
 				String candlePos = "";
-				 
-				for(int i = start; i>end;i--) {
-					//System.out.println(list.get(i));
-					sum+=list.get(i).getClose();	
+
+				for (int i = start; i > end; i--) {
+					// System.out.println(list.get(i));
+					sum += list.get(i).getClose();
 				}
-				if(start==list.size()-1) {
+				if (start == list.size() - 1) {
 					sp.setClosingPrice(list.get(start).getClose());
-					if(list.get(start).getOpen() > list.get(start).getClose()) {
+					if (list.get(start).getOpen() > list.get(start).getClose()) {
 						sp.setLastCandleColor("RED");
 					} else {
 						sp.setLastCandleColor("GREEN");
 					}
-					sp.setLastCandlePos(list.get(start).getClose() - (sum/smaDays));
+					sp.setLastCandlePos(list.get(start).getClose() - (sum / smaDays));
 				}
-				
-				if(numOfCandlePos>0) {
-					if(list.get(start).getOpen() > list.get(start).getClose()) {
+
+				if (numOfCandlePos > 0) {
+					if (list.get(start).getOpen() > list.get(start).getClose()) {
 						candleType = "RED";
 					} else {
 						candleType = "GREEN";
 					}
-					if(list.get(start).getClose()>(sum/smaDays)) {
+					if (list.get(start).getClose() > (sum / smaDays)) {
 						candlePos = "ABOVE";
 					} else {
 						candlePos = "BELOW";
 					}
 					numOfCandlePos--;
-					candlePositions.put(list.get(start).getDate(), candleType+"-"+candlePos);
+					candlePositions.put(list.get(start).getDate(), candleType + "-" + candlePos);
 				}
-				
-				if(prevSMA == 0.0) {
-					prevSMA = sum/smaDays;
+
+				if (prevSMA == 0.0) {
+					prevSMA = sum / smaDays;
 					continue;
 				} else {
-					sumSMADiff+=prevSMA - (sum/smaDays);
-					prevSMA = sum/smaDays;
+					sumSMADiff += prevSMA - (sum / smaDays);
+					prevSMA = sum / smaDays;
 				}
-				
-				//System.out.println(sum/smaDays+"   "+list.get(start).getDate());
-				//simpleMA.put(list.get(start).getDate(),sum/smaDays);
-				
+
+				// System.out.println(sum/smaDays+" "+list.get(start).getDate());
+				// simpleMA.put(list.get(start).getDate(),sum/smaDays);
+
 			}
-			Map<LocalDate,String> sorted = candlePositions
-					.entrySet()
-					.stream()
-					.sorted(Map.Entry.comparingByKey())
+			Map<LocalDate, String> sorted = candlePositions.entrySet().stream().sorted(Map.Entry.comparingByKey())
 					.collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue(), (e1, e2) -> e2, LinkedHashMap::new));
-			
-			//System.out.println(sumSMADiff);
+
+			// System.out.println(sumSMADiff);
 			sp.setSmaDiff(sumSMADiff);
 			sp.setCandlePos(sorted);
-			//System.out.println(sp);
+			// System.out.println(sp);
 		}
-	    
+
 		return sp;
 	}
-	
-	final OkHttpClient httpClient = new OkHttpClient();
-	public String sendGETSync(String symbol) throws IOException {
-		HttpUrl.Builder urlBuilder 
-	      = HttpUrl.parse("https://www.equitymaster.com/charts/graphhc.aspx").newBuilder();
-	    urlBuilder.addQueryParameter("symbol", symbol);
-	    urlBuilder.addQueryParameter("type", "ch");
-	    urlBuilder.addQueryParameter("period", "6");
-	    //urlBuilder.addQueryParameter("resolution", "D");
-		
-		Request request = new Request.Builder()
-				.url(urlBuilder.build().toString())
-				.build();
+
+	static OkHttpClient httpClient = new OkHttpClient();
+
+	public static String sendGETSync(String symbol) throws IOException {
+		HttpUrl.Builder urlBuilder = HttpUrl.parse("https://www.equitymaster.com/charts/graphhc.aspx").newBuilder();
+		urlBuilder.addQueryParameter("symbol", symbol);
+		urlBuilder.addQueryParameter("type", "ch");
+		urlBuilder.addQueryParameter("period", "6");
+		// urlBuilder.addQueryParameter("resolution", "D");
+
+		Request request = new Request.Builder().url(urlBuilder.build().toString()).build();
 
 		try (Response response = httpClient.newCall(request).execute()) {
 			if (!response.isSuccessful())
 				throw new IOException("Unexpected code " + response);
-			
-			 ResponseBody respBody = response.body();
-			 byte[] bytes = respBody.bytes();
-			 String s = new String(bytes, StandardCharsets.UTF_8);
-			 return s;
+
+			ResponseBody respBody = response.body();
+			byte[] bytes = respBody.bytes();
+			String s = new String(bytes, StandardCharsets.UTF_8);
+			return s;
 		} catch (Exception e) {
 			return null;
 		}
-    }
+	}
+
+	public static double[] calculateRSIValues(Candlestick[] candlesticks, int n) {
+
+		double[] results = new double[candlesticks.length];
+		
+		double ut1 = 0;
+		double dt1 = 0;
+		for (int i = 0; i < candlesticks.length; i++) {
+			if (i < n) {
+				continue;
+			}
+
+			ut1 = calcSmmaUp(candlesticks, n, i, ut1);
+			dt1 = calcSmmaDown(candlesticks, n, i, dt1);
+
+			results[i] = 100.0 - 100.0 / (1.0 + calculateRS(ut1, dt1));
+
+		}
+
+		return results;
+	}
+
+	public static double calcSmmaUp(Candlestick[] candlesticks, double n, int i, double avgUt1) {
+
+		if (avgUt1 == 0) {
+			double sumUpChanges = 0;
+
+			for (int j = 0; j < n; j++) {
+				double change = candlesticks[i - j].getClose() - candlesticks[i - j].getOpen();
+
+				if (change > 0) {
+					sumUpChanges += change;
+				}
+			}
+			return sumUpChanges / n;
+		} else {
+			double change = candlesticks[i].getClose() - candlesticks[i].getOpen();
+			if (change < 0) {
+				change = 0;
+			}
+			return ((avgUt1 * (n - 1)) + change) / n;
+		}
+
+	}
+
+	public static double calcSmmaDown(Candlestick[] candlesticks, double n, int i, double avgDt1) {
+		if (avgDt1 == 0) {
+			double sumDownChanges = 0;
+
+			for (int j = 0; j < n; j++) {
+				double change = candlesticks[i - j].getClose() - candlesticks[i - j].getOpen();
+
+				if (change < 0) {
+					sumDownChanges -= change;
+				}
+			}
+			return sumDownChanges / n;
+		} else {
+			double change = candlesticks[i].getClose() - candlesticks[i].getOpen();
+			if (change > 0) {
+				change = 0;
+			}
+			return ((avgDt1 * (n - 1)) - change) / n;
+		}
+
+	}
+
+	public static double calculateRS(double ut1, double dt1) {
+		return ut1 / dt1;
+	}
 }
